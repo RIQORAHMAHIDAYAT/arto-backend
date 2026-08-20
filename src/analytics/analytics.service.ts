@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common'
+import { BadRequestException, Injectable } from '@nestjs/common'
 import { PrismaService } from '../common/prisma/prisma.service'
 import { TransactionType } from '@prisma/client'
-import { addDaysUtc, daysBetweenInclusive, formatMonthShort, parseDateOnly, parseEndOfDay, toDateOnly } from '../common/utils/date'
+import { addDaysUtc, daysBetweenInclusive, parseDateOnly, parseEndOfDay, toDateOnly } from '../common/utils/date'
 import { toNumber } from '../common/utils/money'
 
 export interface AnalyticsRange {
@@ -116,14 +116,24 @@ export class AnalyticsService {
     const fromDate = parseDateOnly(from)
     const toDate = parseDateOnly(to)
     const keys: string[] = []
-    const stepDays = bucket === 'week' ? 7 : 1
-    for (let d = new Date(fromDate); d <= toDate; d = addDaysUtc(d, stepDays)) {
-      keys.push(toDateOnly(d))
+    if (bucket === 'week') {
+      // Sejajarkan bucket dengan Senin (awal pekan) agar cocok dengan key transaksi,
+      // lalu maju mundur 7 hari dari minggu terakhir.
+      let cursor = this.mondayOf(toDate)
+      while (cursor.getTime() >= fromDate.getTime()) {
+        keys.push(toDateOnly(cursor))
+        cursor = addDaysUtc(cursor, -7)
+      }
+      keys.reverse()
+    } else {
+      for (let d = new Date(fromDate); d <= toDate; d = addDaysUtc(d, 1)) {
+        keys.push(toDateOnly(d))
+      }
     }
 
     return keys.map((key) => {
       const value = map.get(key) ?? { income: 0, expense: 0 }
-      const label = bucket === 'week' ? formatMonthShort(new Date(`${key}T00:00:00.000Z`)) : key.slice(8)
+      const label = bucket === 'week' ? this.weekLabel(key) : key.slice(8)
       return { label, income: value.income, expense: value.expense }
     })
   }
@@ -132,6 +142,11 @@ export class AnalyticsService {
     const now = new Date()
     const from = range.from ?? toDateOnly(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)))
     const to = range.to ?? toDateOnly(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)))
+    const fromDate = parseDateOnly(from)
+    const toDate = parseDateOnly(to)
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      throw new BadRequestException('Parameter tanggal tidak valid (YYYY-MM-DD).', 'VALIDATION')
+    }
     return { from, to }
   }
 
@@ -139,5 +154,13 @@ export class AnalyticsService {
     const d = new Date(date)
     d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
     return d
+  }
+
+  private weekLabel(mondayKey: string): string {
+    const start = parseDateOnly(mondayKey)
+    const end = addDaysUtc(start, 6)
+    const fmt = (date: Date): string =>
+      `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+    return `${fmt(start)} – ${fmt(end)}`
   }
 }

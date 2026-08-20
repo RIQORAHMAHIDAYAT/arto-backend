@@ -67,21 +67,49 @@ export class AccountsService {
   }
 
   private async computeBalances(userId: string): Promise<Map<string, number>> {
-    const [accounts, transactions] = await Promise.all([
-      this.prisma.account.findMany({ where: { userId } }),
-      this.prisma.transaction.findMany({ where: { userId }, select: { accountId: true, type: true, amount: true } }),
+    const [accounts, grouped] = await Promise.all([
+      this.prisma.account.findMany({
+        where: { userId },
+        select: { id: true, initialBalance: true },
+      }),
+      this.prisma.transaction.groupBy({
+        by: ['accountId', 'type'],
+        where: { userId },
+        _sum: { amount: true },
+      }),
     ])
     const map = new Map<string, number>()
     for (const a of accounts) map.set(a.id, toNumber(a.initialBalance))
-    for (const t of transactions) {
-      const current = map.get(t.accountId) ?? 0
-      map.set(t.accountId, t.type === TransactionType.income ? current + toNumber(t.amount) : current - toNumber(t.amount))
+    for (const g of grouped) {
+      const current = map.get(g.accountId) ?? 0
+      map.set(
+        g.accountId,
+        g.type === TransactionType.income
+          ? current + toNumber(g._sum.amount)
+          : current - toNumber(g._sum.amount),
+      )
     }
     return map
   }
 
   private async balanceOf(userId: string, accountId: string): Promise<number> {
-    const balances = await this.computeBalances(userId)
-    return balances.get(accountId) ?? 0
+    const [account, grouped] = await Promise.all([
+      this.prisma.account.findUnique({
+        where: { id: accountId },
+        select: { initialBalance: true },
+      }),
+      this.prisma.transaction.groupBy({
+        by: ['type'],
+        where: { userId, accountId },
+        _sum: { amount: true },
+      }),
+    ])
+
+    let delta = 0
+    for (const g of grouped) {
+      delta +=
+        g.type === TransactionType.income ? toNumber(g._sum.amount) : -toNumber(g._sum.amount)
+    }
+    return toNumber(account?.initialBalance) + delta
   }
 }

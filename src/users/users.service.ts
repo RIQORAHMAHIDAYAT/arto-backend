@@ -32,6 +32,7 @@ export class UsersService {
     email: string
     name: string
     theme: string
+    role: string
     createdAt: Date
     updatedAt: Date
   }): PublicUser {
@@ -40,6 +41,7 @@ export class UsersService {
       email: user.email,
       name: user.name,
       theme: user.theme,
+      role: user.role,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
     }

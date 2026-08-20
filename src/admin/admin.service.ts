@@ -21,6 +21,8 @@ export class AdminService {
             OR: [
               { transactions: { some: { createdAt: { gte: sinceEndOfWeek } } } },
               { budgets: { some: { createdAt: { gte: sinceEndOfWeek } } } },
+              { accounts: { some: { createdAt: { gte: sinceEndOfWeek } } } },
+              { goals: { some: { createdAt: { gte: sinceEndOfWeek } } } },
             ],
           },
         }),

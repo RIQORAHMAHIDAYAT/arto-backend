@@ -1,10 +1,11 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
-import { User } from '@prisma/client'
+import { Prisma, User } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
 import { createHash, randomBytes } from 'crypto'
 import { PrismaService } from '../common/prisma/prisma.service'
+import { ChangePasswordDto } from './dto/change-password.dto'
 import { LoginDto } from './dto/login.dto'
 import { RegisterDto } from './dto/register.dto'
 
@@ -13,6 +14,7 @@ export interface PublicUser {
   email: string
   name: string
   theme: string
+  role: string
   createdAt: string
   updatedAt: string
 }
@@ -74,12 +76,15 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: record.userId } })
     if (!user) throw new UnauthorizedException('Sesi tidak valid.', 'INVALID_REFRESH_TOKEN')
 
-    await this.prisma.refreshToken.update({ where: { id: record.id }, data: { revokedAt: new Date() } })
-    await this.prisma.refreshToken.deleteMany({
-      where: { userId: user.id, expiresAt: { lt: new Date() } },
+    // Rotasi token harus atomik: revoke token lama + buat pasangan token baru
+    // dalam satu transaksi agar gagal di tengah tidak membiarkan pengguna tanpa sesi.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.update({ where: { id: record.id }, data: { revokedAt: new Date() } })
+      await tx.refreshToken.deleteMany({
+        where: { userId: user.id, expiresAt: { lt: new Date() } },
+      })
+      return this.issueTokensWith(tx, user)
     })
-
-    return this.issueTokens(user)
   }
 
   async logout(refreshToken: string): Promise<void> {
@@ -90,7 +95,34 @@ export class AuthService {
     })
   }
 
+  async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } })
+    if (!user) throw new UnauthorizedException('Sesi tidak valid.', 'INVALID_CREDENTIALS')
+
+    const ok = await bcrypt.compare(dto.currentPassword, user.passwordHash)
+    if (!ok) {
+      throw new UnauthorizedException('Password saat ini salah.', 'INVALID_CURRENT_PASSWORD')
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 12)
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      // Cabut semua refresh token aktif agar sesi lama wajib login ulang.
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ])
+  }
+
   private async issueTokens(user: User): Promise<TokenPair> {
+    return this.issueTokensWith(this.prisma, user)
+  }
+
+  private async issueTokensWith(
+    client: Pick<Prisma.TransactionClient, 'refreshToken'>,
+    user: User,
+  ): Promise<TokenPair> {
     const accessToken = await this.jwtService.signAsync({
       sub: user.id,
       email: user.email,
@@ -101,7 +133,7 @@ export class AuthService {
     const ttlDays = this.config.get<number>('JWT_REFRESH_TTL_DAYS', 30)
     const expiresAt = new Date(Date.now() + ttlDays * 86_400_000)
 
-    await this.prisma.refreshToken.create({
+    await client.refreshToken.create({
       data: { userId: user.id, tokenHash: this.hashToken(refreshToken), expiresAt },
     })
 
@@ -118,6 +150,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       theme: user.theme,
+      role: user.role,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
     }

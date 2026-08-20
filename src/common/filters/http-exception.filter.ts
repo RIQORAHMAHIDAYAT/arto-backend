@@ -45,6 +45,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
       if (exception.code === 'P2003') {
         return { statusCode: 409, message: 'Data masih dipakai dan tidak dapat diubah.', code: 'CONFLICT' }
       }
+      if (exception.code === 'P2025') {
+        return { statusCode: 404, message: 'Data tidak ditemukan.', code: 'NOT_FOUND' }
+      }
+    }
+
+    if (exception instanceof Prisma.PrismaClientValidationError) {
+      return { statusCode: 400, message: 'Request tidak valid.', code: 'VALIDATION' }
     }
 
     return {

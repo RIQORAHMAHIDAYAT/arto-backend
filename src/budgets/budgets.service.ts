@@ -76,6 +76,12 @@ export class BudgetsService {
       where: { id: dto.categoryId, OR: [{ userId }, { userId: null }] },
     })
     if (!category) throw new NotFoundException('Kategori tidak ditemukan.')
+    if (category.type !== 'expense') {
+      throw new UnprocessableEntityException(
+        'Budget hanya bisa dibuat untuk kategori pengeluaran.',
+        'INCOME_CATEGORY',
+      )
+    }
 
     const start = parseDateOnly(dto.periodStart)
     const end = parsePeriodEnd(dto.periodEnd)
@@ -106,6 +112,7 @@ export class BudgetsService {
 
   async update(userId: string, id: string, dto: UpdateBudgetDto): Promise<BudgetWithMeta> {
     const budget = await this.findOwned(userId, id)
+    const nextCategoryId = dto.categoryId ?? budget.categoryId
     const nextStart = dto.periodStart !== undefined ? dto.periodStart : toDateOnly(budget.periodStart)
     const nextEnd = dto.periodEnd !== undefined ? dto.periodEnd : toDateOnly(budget.periodEnd)
     if (nextEnd < nextStart) {
@@ -116,6 +123,27 @@ export class BudgetsService {
         where: { id: dto.categoryId, OR: [{ userId }, { userId: null }] },
       })
       if (!category) throw new NotFoundException('Kategori tidak ditemukan.')
+      if (category.type !== 'expense') {
+        throw new UnprocessableEntityException(
+          'Budget hanya bisa dibuat untuk kategori pengeluaran.',
+          'INCOME_CATEGORY',
+        )
+      }
+    }
+
+    // Cek tumpang-tindih periode dengan budget lain pada kategori yang sama
+    // (konsisten dengan create).
+    const overlap = await this.prisma.budget.findFirst({
+      where: {
+        userId,
+        categoryId: nextCategoryId,
+        id: { not: budget.id },
+        periodStart: { lte: parsePeriodEnd(nextEnd) },
+        periodEnd: { gte: parseDateOnly(nextStart) },
+      },
+    })
+    if (overlap) {
+      throw new ConflictException('Sudah ada budget untuk kategori pada periode ini.', 'DUPLICATE_BUDGET')
     }
 
     const updated = await this.prisma.budget.update({
@@ -137,10 +165,13 @@ export class BudgetsService {
     await this.prisma.budget.delete({ where: { id: budget.id } })
   }
 
-  async getDailyLimit(userId: string, id: string, today = new Date()): Promise<DailyLimitInfo> {
+  async getDailyLimit(userId: string, id: string, today = new Date(), spentOverride?: number): Promise<DailyLimitInfo> {
     const budget = await this.findOwned(userId, id)
     const category = budget.category
-    const spent = await this.spentForBudget(userId, budget.categoryId, budget.periodStart, budget.periodEnd)
+    const spent =
+      spentOverride !== undefined
+        ? spentOverride
+        : await this.spentForBudget(userId, budget.categoryId, budget.periodStart, budget.periodEnd)
 
     const result = calculateDailyLimit({
       budgetAmount: toNumber(budget.amount),
@@ -254,23 +285,26 @@ export class BudgetsService {
     const map = new Map<string, number>()
     if (budgets.length === 0) return map
 
-    const grouped = await this.prisma.transaction.groupBy({
-      by: ['categoryId'],
-      where: {
-        userId,
-        type: 'expense',
-        OR: budgets.map((b) => ({
-          categoryId: b.categoryId,
-          transactionDate: { gte: b.periodStart, lte: b.periodEnd },
-        })),
-      },
-      _sum: { amount: true },
-    })
-    const sumByCategory = new Map(grouped.map((g) => [g.categoryId, toNumber(g._sum.amount)]))
+    // Hitung terpakai per-budget secara terpisah. Grouping by categoryId saja
+    // tidak aman karena satu kategori bisa punya beberapa periode budget
+    // (mis. budget bulan Jan dan Feb) sehingga terjadi double-count.
+    const results = await Promise.all(
+      budgets.map(async (b) => {
+        const aggregated = await this.prisma.transaction.aggregate({
+          where: {
+            userId,
+            categoryId: b.categoryId,
+            type: 'expense',
+            transactionDate: { gte: b.periodStart, lte: b.periodEnd },
+          },
+          _sum: { amount: true },
+        })
+        return { budgetId: b.id, sum: toNumber(aggregated._sum.amount) }
+      }),
+    )
 
-    for (const b of budgets) {
-      const sum = sumByCategory.get(b.categoryId) ?? 0
-      if (sum > 0) map.set(b.id, sum)
+    for (const r of results) {
+      if (r.sum > 0) map.set(r.budgetId, r.sum)
     }
     return map
   }

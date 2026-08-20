@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common'
 import { AuthUser, CurrentUser } from '../common/decorators/current-user.decorator'
+import { isDateOnly } from '../common/utils/date'
 import { BudgetsService, BudgetSummaryItem, BudgetWithMeta, DailyLimitInfo } from './budgets.service'
 import { CreateBudgetDto } from './dto/create-budget.dto'
 import { UpdateBudgetDto } from './dto/update-budget.dto'
@@ -29,7 +30,13 @@ export class BudgetsController {
     @Param('id') id: string,
     @Query('date') date?: string,
   ): Promise<DailyLimitInfo> {
-    const today = date ? new Date(`${date}T00:00:00.000Z`) : new Date()
+    let today = new Date()
+    if (date) {
+      if (!isDateOnly(date)) {
+        throw new BadRequestException('Format tanggal tidak valid (YYYY-MM-DD).', 'VALIDATION')
+      }
+      today = new Date(`${date}T00:00:00.000Z`)
+    }
     return this.budgetsService.getDailyLimit(user.id, id, today)
   }
 

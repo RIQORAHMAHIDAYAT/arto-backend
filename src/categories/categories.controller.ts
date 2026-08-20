@@ -1,17 +1,24 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common'
+import { IsEnum, IsOptional } from 'class-validator'
 import { TransactionType } from '@prisma/client'
 import { AuthUser, CurrentUser } from '../common/decorators/current-user.decorator'
 import { CategoriesService } from './categories.service'
 import { CreateCategoryDto } from './dto/create-category.dto'
 import { UpdateCategoryDto } from './dto/update-category.dto'
 
+class CategoryQuery {
+  @IsOptional()
+  @IsEnum(TransactionType)
+  type?: TransactionType
+}
+
 @Controller('categories')
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser, @Query('type') type?: TransactionType) {
-    return this.categoriesService.list(user.id, type)
+  list(@CurrentUser() user: AuthUser, @Query() query: CategoryQuery) {
+    return this.categoriesService.list(user.id, query.type)
   }
 
   @Post()

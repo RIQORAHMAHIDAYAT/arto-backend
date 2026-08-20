@@ -48,8 +48,14 @@ export class DashboardService {
       this.budgetsService.pickActiveBudget(userId, today),
     ])
 
+    const spentByBudget = new Map(budgetSummary.map((b) => [b.budgetId, b.spent]))
     const dailyLimit = activeBudget
-      ? await this.budgetsService.getDailyLimit(userId, activeBudget.id, today)
+      ? await this.budgetsService.getDailyLimit(
+          userId,
+          activeBudget.id,
+          today,
+          spentByBudget.get(activeBudget.id),
+        )
       : null
 
     return {

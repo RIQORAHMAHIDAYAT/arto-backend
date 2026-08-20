@@ -3,10 +3,13 @@ import * as bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
-export const DEMO_EMAIL = 'demo@arto.id'
-export const DEMO_PASSWORD = 'demopass123'
-export const ADMIN_EMAIL = 'admin@arto.id'
-export const ADMIN_PASSWORD = 'adminpass123'
+// Kredensial akun seed. Nilai default hanya untuk pengembangan lokal —
+// wajib diganti via env (SEED_DEMO_PASSWORD / SEED_ADMIN_PASSWORD)
+// dan seeding diblokir total pada environment production.
+export const DEMO_EMAIL = process.env.SEED_DEMO_EMAIL ?? 'demo@arto.id'
+export const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'admin@arto.id'
+export const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? 'demopass123'
+export const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? 'adminpass123'
 
 const SYSTEM_CATEGORIES: Array<{ name: string; type: TransactionType; icon: string }> = [
   { name: 'Makanan', type: 'expense', icon: '🍜' },
@@ -22,15 +25,12 @@ const SYSTEM_CATEGORIES: Array<{ name: string; type: TransactionType; icon: stri
 
 function dateOnly(daysFromToday: number): string {
   const d = new Date()
-  d.setDate(d.getDate() + daysFromToday)
+  d.setUTCDate(d.getUTCDate() + daysFromToday)
   return toDateOnly(d)
 }
 
 function toDateOnly(d: Date): string {
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return d.toISOString().slice(0, 10)
 }
 
 async function upsertSystemCategories(): Promise<Map<string, string>> {
@@ -48,6 +48,11 @@ async function upsertSystemCategories(): Promise<Map<string, string>> {
 }
 
 async function main(): Promise<void> {
+  // Lindungi production agar kredensial seed (terutama admin) tidak pernah masuk DB riil.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Seeding tidak diizinkan pada environment production.')
+  }
+
   const categoryIds = await upsertSystemCategories()
 
   const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } })
