@@ -1,35 +1,61 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
-import { Account, TransactionType } from '@prisma/client'
+import { Account, AccountType, TransactionType } from '@prisma/client'
 import { PrismaService } from '../common/prisma/prisma.service'
 import { toNumber } from '../common/utils/money'
 import { CreateAccountDto } from './dto/create-account.dto'
 import { UpdateAccountDto } from './dto/update-account.dto'
 
-export interface AccountWithBalance extends Account {
+/**
+ * Bentuk respons akun yang dipetakan ke nilai primitif, konsisten dengan
+ * resource lain (transaction/budget/goal): Decimal → number,
+ * tanggal → string ISO. Mencegah `initialBalance` terserialisasi sebagai
+ * string saat dikirim ke klien.
+ */
+export interface AccountResponse {
+  id: string
+  userId: string
+  name: string
+  type: AccountType
+  initialBalance: number
   balance: number
+  createdAt: string
+  updatedAt: string
+}
+
+function toResponse(account: Account, balance: number): AccountResponse {
+  return {
+    id: account.id,
+    userId: account.userId,
+    name: account.name,
+    type: account.type,
+    initialBalance: toNumber(account.initialBalance),
+    balance,
+    createdAt: account.createdAt.toISOString(),
+    updatedAt: account.updatedAt.toISOString(),
+  }
 }
 
 @Injectable()
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(userId: string): Promise<AccountWithBalance[]> {
+  async list(userId: string): Promise<AccountResponse[]> {
     const accounts = await this.prisma.account.findMany({
       where: { userId },
       orderBy: { createdAt: 'asc' },
     })
     const balances = await this.computeBalances(userId)
-    return accounts.map((a) => ({ ...a, balance: balances.get(a.id) ?? 0 }))
+    return accounts.map((a) => toResponse(a, balances.get(a.id) ?? 0))
   }
 
-  async get(userId: string, id: string): Promise<AccountWithBalance> {
+  async get(userId: string, id: string): Promise<AccountResponse> {
     const account = await this.prisma.account.findFirst({ where: { id, userId } })
     if (!account) throw new NotFoundException('Akun tidak ditemukan.')
     const balance = await this.balanceOf(userId, account.id)
-    return { ...account, balance }
+    return toResponse(account, balance)
   }
 
-  async create(userId: string, dto: CreateAccountDto): Promise<AccountWithBalance> {
+  async create(userId: string, dto: CreateAccountDto): Promise<AccountResponse> {
     const account = await this.prisma.account.create({
       data: {
         userId,
@@ -38,10 +64,10 @@ export class AccountsService {
         initialBalance: dto.initialBalance ?? 0,
       },
     })
-    return { ...account, balance: toNumber(account.initialBalance) }
+    return toResponse(account, toNumber(account.initialBalance))
   }
 
-  async update(userId: string, id: string, dto: UpdateAccountDto): Promise<AccountWithBalance> {
+  async update(userId: string, id: string, dto: UpdateAccountDto): Promise<AccountResponse> {
     const account = await this.prisma.account.findFirst({ where: { id, userId } })
     if (!account) throw new NotFoundException('Akun tidak ditemukan.')
     const updated = await this.prisma.account.update({
@@ -53,7 +79,7 @@ export class AccountsService {
       },
     })
     const balance = await this.balanceOf(userId, updated.id)
-    return { ...updated, balance }
+    return toResponse(updated, balance)
   }
 
   async remove(userId: string, id: string): Promise<void> {

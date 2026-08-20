@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { APP_GUARD } from '@nestjs/core'
 import { JwtModule } from '@nestjs/jwt'
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler'
+import { validateEnv } from './config/env.validation'
 import { AccountsModule } from './accounts/accounts.module'
 import { AdminModule } from './admin/admin.module'
 import { AnalyticsModule } from './analytics/analytics.module'
@@ -21,7 +22,7 @@ import { parseDurationToSeconds } from './common/utils/time'
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

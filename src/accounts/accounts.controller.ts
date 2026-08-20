@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common'
 import { CurrentUser, AuthUser } from '../common/decorators/current-user.decorator'
-import { AccountsService, AccountWithBalance } from './accounts.service'
+import { AccountResponse, AccountsService } from './accounts.service'
 import { CreateAccountDto } from './dto/create-account.dto'
 import { UpdateAccountDto } from './dto/update-account.dto'
 
@@ -9,17 +9,17 @@ export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser): Promise<AccountWithBalance[]> {
+  list(@CurrentUser() user: AuthUser): Promise<AccountResponse[]> {
     return this.accountsService.list(user.id)
   }
 
   @Post()
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateAccountDto): Promise<AccountWithBalance> {
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateAccountDto): Promise<AccountResponse> {
     return this.accountsService.create(user.id, dto)
   }
 
   @Get(':id')
-  get(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<AccountWithBalance> {
+  get(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<AccountResponse> {
     return this.accountsService.get(user.id, id)
   }
 
@@ -28,7 +28,7 @@ export class AccountsController {
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: UpdateAccountDto,
-  ): Promise<AccountWithBalance> {
+  ): Promise<AccountResponse> {
     return this.accountsService.update(user.id, id, dto)
   }
 
