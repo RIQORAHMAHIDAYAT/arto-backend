@@ -39,31 +39,53 @@ export class AdminService {
     }
   }
 
-  async usersStatistics() {
-    const users = await this.prisma.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: { select: { transactions: true, accounts: true, budgets: true, goals: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-    return users.map((u) => ({
-      id: u.id,
-      email: u.email,
-      name: u.name,
-      role: u.role,
-      createdAt: u.createdAt.toISOString(),
-      updatedAt: u.updatedAt.toISOString(),
-      transactionCount: u._count.transactions,
-      accountCount: u._count.accounts,
-      budgetCount: u._count.budgets,
-      goalCount: u._count.goals,
-    }))
+  async usersStatistics(page: number, limit: number, search?: string) {
+    const where = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' as const } },
+            { email: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: { select: { transactions: true, accounts: true, budgets: true, goals: true } },
+        },
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.user.count({ where }),
+    ])
+
+    return {
+      items: users.map((u) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        createdAt: u.createdAt.toISOString(),
+        updatedAt: u.updatedAt.toISOString(),
+        transactionCount: u._count.transactions,
+        accountCount: u._count.accounts,
+        budgetCount: u._count.budgets,
+        goalCount: u._count.goals,
+      })),
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    }
   }
 
   async transactionsStatistics() {

@@ -8,8 +8,10 @@ const prisma = new PrismaClient()
 // dan seeding diblokir total pada environment production.
 export const DEMO_EMAIL = process.env.SEED_DEMO_EMAIL ?? 'demo@arto.id'
 export const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'admin@arto.id'
+export const SUPERADMIN_EMAIL = process.env.SEED_SUPERADMIN_EMAIL ?? 'superadmin@arto.id'
 export const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? 'demopass123'
 export const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? 'adminpass123'
+export const SUPERADMIN_PASSWORD = process.env.SEED_SUPERADMIN_PASSWORD ?? 'superpass123'
 
 const SYSTEM_CATEGORIES: Array<{ name: string; type: TransactionType; icon: string }> = [
   { name: 'Makanan', type: 'expense', icon: '🍜' },
@@ -66,6 +68,19 @@ async function main(): Promise<void> {
       },
     })
     console.log(`Seeded admin: ${ADMIN_EMAIL}`)
+  }
+
+  const superadmin = await prisma.user.findUnique({ where: { email: SUPERADMIN_EMAIL } })
+  if (!superadmin) {
+    await prisma.user.create({
+      data: {
+        email: SUPERADMIN_EMAIL,
+        passwordHash: await bcrypt.hash(SUPERADMIN_PASSWORD, 12),
+        name: 'Superadmin ARTO',
+        role: 'SUPER_ADMIN',
+      },
+    })
+    console.log(`Seeded superadmin: ${SUPERADMIN_EMAIL}`)
   }
 
   const demo = await prisma.user.findUnique({ where: { email: DEMO_EMAIL } })

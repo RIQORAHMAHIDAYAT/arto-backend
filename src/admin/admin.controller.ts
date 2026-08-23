@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, UseInterceptors } from '@nestjs/common'
+import { Controller, Get, Query, UseGuards, UseInterceptors } from '@nestjs/common'
 import { UserRole } from '@prisma/client'
 import { Roles } from '../common/decorators/roles.decorator'
 import { RolesGuard } from '../common/guards/roles.guard'
@@ -18,8 +18,14 @@ export class AdminController {
   }
 
   @Get('users/statistics')
-  usersStatistics() {
-    return this.adminService.usersStatistics()
+  usersStatistics(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('query') query?: string,
+  ) {
+    const safePage = Math.max(1, Number(page) || 1)
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 20))
+    return this.adminService.usersStatistics(safePage, safeLimit, query?.trim() || undefined)
   }
 
   @Get('transactions/statistics')
