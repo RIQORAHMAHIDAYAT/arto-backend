@@ -32,12 +32,12 @@ describe('validateEnv', () => {
     ).toThrow(/minimal 32 karakter/)
   })
 
-  it('melempar error di production jika JWT_ACCESS_SECRET masih placeholder', () => {
+  it('melempar error di production jika JWT_ACCESS_SECRET menggunakan placeholder dev-only atau change-in-production', () => {
     expect(() =>
       validateEnv({
         NODE_ENV: 'production',
         DATABASE_URL: 'postgres://localhost/arto',
-        JWT_ACCESS_SECRET: 'change-me-placeholder-secret-ini-panjang',
+        JWT_ACCESS_SECRET: 'dev-only-access-secret-change-in-production',
       }),
     ).toThrow(/placeholder/)
   })

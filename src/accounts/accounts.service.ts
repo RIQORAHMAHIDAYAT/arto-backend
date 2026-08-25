@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Account, AccountType, TransactionType } from '@prisma/client'
 import { PrismaService } from '../common/prisma/prisma.service'
 import { toNumber } from '../common/utils/money'
+import { isForeignKeyViolation } from '../common/utils/prisma-errors'
 import { CreateAccountDto } from './dto/create-account.dto'
 import { UpdateAccountDto } from './dto/update-account.dto'
 
@@ -85,11 +86,16 @@ export class AccountsService {
   async remove(userId: string, id: string): Promise<void> {
     const account = await this.prisma.account.findFirst({ where: { id, userId } })
     if (!account) throw new NotFoundException('Akun tidak ditemukan.')
-    const count = await this.prisma.transaction.count({ where: { accountId: id } })
-    if (count > 0) {
-      throw new ConflictException('Akun memiliki transaksi dan tidak dapat dihapus.', 'ACCOUNT_HAS_TRANSACTIONS')
+    // Hapus langsung; FK Restrict transaksi → akun di database bersifat atomik
+    // (tidak ada celah antara pengecekan dan penghapusan).
+    try {
+      await this.prisma.account.delete({ where: { id } })
+    } catch (err) {
+      if (isForeignKeyViolation(err)) {
+        throw new ConflictException('Akun memiliki transaksi dan tidak dapat dihapus.', 'ACCOUNT_HAS_TRANSACTIONS')
+      }
+      throw err
     }
-    await this.prisma.account.delete({ where: { id } })
   }
 
   private async computeBalances(userId: string): Promise<Map<string, number>> {

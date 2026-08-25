@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { Category, TransactionType } from '@prisma/client'
 import { PrismaService } from '../common/prisma/prisma.service'
+import { isForeignKeyViolation } from '../common/utils/prisma-errors'
 import { CreateCategoryDto } from './dto/create-category.dto'
 import { UpdateCategoryDto } from './dto/update-category.dto'
 
@@ -50,14 +51,16 @@ export class CategoriesService {
     if (category.userId === null) {
       throw new ForbiddenException('Kategori bawaan tidak dapat dihapus.', 'FORBIDDEN')
     }
-    const [txCount, budgetCount] = await Promise.all([
-      this.prisma.transaction.count({ where: { categoryId: id } }),
-      this.prisma.budget.count({ where: { categoryId: id } }),
-    ])
-    if (txCount > 0 || budgetCount > 0) {
-      throw new ConflictException('Kategori masih dipakai dan tidak dapat dihapus.', 'CATEGORY_IN_USE')
+    // Hapus langsung; FK Restrict di database adalah sumber kebenaran yang
+    // atomik (bebas race dengan transaksi yang baru saja dibuat pengguna lain).
+    try {
+      await this.prisma.category.delete({ where: { id } })
+    } catch (err) {
+      if (isForeignKeyViolation(err)) {
+        throw new ConflictException('Kategori masih dipakai dan tidak dapat dihapus.', 'CATEGORY_IN_USE')
+      }
+      throw err
     }
-    await this.prisma.category.delete({ where: { id } })
   }
 
   private async findOwned(userId: string, id: string): Promise<Category> {

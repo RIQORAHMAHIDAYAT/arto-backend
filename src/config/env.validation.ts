@@ -20,7 +20,10 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     errors.push('JWT_ACCESS_SECRET wajib diisi pada environment production.')
   } else if (secret.length < 32) {
     errors.push('JWT_ACCESS_SECRET minimal 32 karakter.')
-  } else if (secret.startsWith('change-me-') || secret === 'dev-access-secret') {
+  } else if (
+    /(^change-me|^dev[-_]|[-_]in[-_]production$|^secret$|^password$|dev-only)/i.test(secret) ||
+    secret === 'dev-access-secret'
+  ) {
     errors.push('JWT_ACCESS_SECRET masih bernilai placeholder — ganti dengan secret kuat.')
   }
 

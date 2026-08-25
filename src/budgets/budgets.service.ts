@@ -11,6 +11,7 @@ import {
 } from './daily-limit.util'
 import { CreateBudgetDto } from './dto/create-budget.dto'
 import { UpdateBudgetDto } from './dto/update-budget.dto'
+import { isExclusionViolation } from '../common/utils/prisma-errors'
 
 export interface BudgetWithMeta {
   id: string
@@ -85,29 +86,42 @@ export class BudgetsService {
 
     const start = parseDateOnly(dto.periodStart)
     const end = parsePeriodEnd(dto.periodEnd)
-    const overlap = await this.prisma.budget.findFirst({
-      where: {
-        userId,
-        categoryId: dto.categoryId,
-        periodStart: { lte: end },
-        periodEnd: { gte: start },
-      },
-    })
-    if (overlap) {
-      throw new ConflictException('Sudah ada budget untuk kategori pada periode ini.', 'DUPLICATE_BUDGET')
-    }
 
-    const budget = await this.prisma.budget.create({
-      data: {
-        userId,
-        categoryId: dto.categoryId,
-        amount: dto.amount,
-        periodStart: start,
-        periodEnd: end,
-      },
-      include: { category: true },
-    })
-    return this.decorate(budget, 0)
+    // Cek tumpang-tindih + insert dijalankan dalam satu transaksi, dan
+    // constraint `budgets_no_overlap` (btree_gist EXCLUDE) di level database
+    // menjamin dua request konkuren tidak bisa sama-sama lolos (anti-TOCTOU).
+    try {
+      const budget = await this.prisma.$transaction(async (tx) => {
+        const overlap = await tx.budget.findFirst({
+          where: {
+            userId,
+            categoryId: dto.categoryId,
+            periodStart: { lte: end },
+            periodEnd: { gte: start },
+          },
+        })
+        if (overlap) {
+          throw new ConflictException('Sudah ada budget untuk kategori pada periode ini.', 'DUPLICATE_BUDGET')
+        }
+
+        return tx.budget.create({
+          data: {
+            userId,
+            categoryId: dto.categoryId,
+            amount: dto.amount,
+            periodStart: start,
+            periodEnd: end,
+          },
+          include: { category: true },
+        })
+      })
+      return this.decorate(budget, 0)
+    } catch (err) {
+      if (isExclusionViolation(err)) {
+        throw new ConflictException('Sudah ada budget untuk kategori pada periode ini.', 'DUPLICATE_BUDGET')
+      }
+      throw err
+    }
   }
 
   async update(userId: string, id: string, dto: UpdateBudgetDto): Promise<BudgetWithMeta> {
@@ -132,32 +146,42 @@ export class BudgetsService {
     }
 
     // Cek tumpang-tindih periode dengan budget lain pada kategori yang sama
-    // (konsisten dengan create).
-    const overlap = await this.prisma.budget.findFirst({
-      where: {
-        userId,
-        categoryId: nextCategoryId,
-        id: { not: budget.id },
-        periodStart: { lte: parsePeriodEnd(nextEnd) },
-        periodEnd: { gte: parseDateOnly(nextStart) },
-      },
-    })
-    if (overlap) {
-      throw new ConflictException('Sudah ada budget untuk kategori pada periode ini.', 'DUPLICATE_BUDGET')
-    }
+    // (konsisten dengan create) — atomik bersama update-nya, dan constraint
+    // `budgets_no_overlap` di database menjadi jaring pengaman konkurensi.
+    try {
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const overlap = await tx.budget.findFirst({
+          where: {
+            userId,
+            categoryId: nextCategoryId,
+            id: { not: budget.id },
+            periodStart: { lte: parsePeriodEnd(nextEnd) },
+            periodEnd: { gte: parseDateOnly(nextStart) },
+          },
+        })
+        if (overlap) {
+          throw new ConflictException('Sudah ada budget untuk kategori pada periode ini.', 'DUPLICATE_BUDGET')
+        }
 
-    const updated = await this.prisma.budget.update({
-      where: { id },
-      data: {
-        categoryId: dto.categoryId,
-        amount: dto.amount,
-        periodStart: dto.periodStart !== undefined ? parseDateOnly(dto.periodStart) : undefined,
-        periodEnd: dto.periodEnd !== undefined ? parsePeriodEnd(dto.periodEnd) : undefined,
-      },
-      include: { category: true },
-    })
-    const spent = await this.spentForBudget(userId, updated.categoryId, updated.periodStart, updated.periodEnd)
-    return this.decorate(updated, spent)
+        return tx.budget.update({
+          where: { id },
+          data: {
+            categoryId: dto.categoryId,
+            amount: dto.amount,
+            periodStart: dto.periodStart !== undefined ? parseDateOnly(dto.periodStart) : undefined,
+            periodEnd: dto.periodEnd !== undefined ? parsePeriodEnd(dto.periodEnd) : undefined,
+          },
+          include: { category: true },
+        })
+      })
+      const spent = await this.spentForBudget(userId, updated.categoryId, updated.periodStart, updated.periodEnd)
+      return this.decorate(updated, spent)
+    } catch (err) {
+      if (isExclusionViolation(err)) {
+        throw new ConflictException('Sudah ada budget untuk kategori pada periode ini.', 'DUPLICATE_BUDGET')
+      }
+      throw err
+    }
   }
 
   async remove(userId: string, id: string): Promise<void> {

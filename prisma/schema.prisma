@@ -114,6 +114,11 @@ model Transaction {
   @@map("transactions")
 }
 
+// CATATAN: tabel budgets memiliki constraint DB-level "budgets_no_overlap"
+// (EXCLUDE USING gist dengan btree_gist) yang ditegakkan lewat migrasi SQL
+// mentah (20260825000000_add_budgets_no_overlap). Constraint ini tidak
+// dapat diekspresikan dalam DSL Prisma — JANGAN jalankan `prisma migrate diff`
+// dari schema ini sebagai sumber kebenaran penuh.
 model Budget {
   id          String  @id @default(uuid()) @db.Uuid
   userId      String  @map("user_id") @db.Uuid
