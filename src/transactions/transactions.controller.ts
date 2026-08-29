@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Query } from '@nestjs/common'
 import { AuthUser, CurrentUser } from '../common/decorators/current-user.decorator'
 import { Paginated, TransactionFilters, TransactionsService, transactionToResponse } from './transactions.service'
 import { CreateTransactionDto } from './dto/create-transaction.dto'
@@ -38,6 +38,23 @@ export class TransactionsController {
   @Post()
   async create(@CurrentUser() user: AuthUser, @Body() dto: CreateTransactionDto): Promise<TransactionResponse> {
     return transactionToResponse(await this.transactionsService.create(user.id, dto))
+  }
+
+  @Get('export/csv')
+  @HttpCode(200)
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="transactions.csv"')
+  async exportCsv(
+    @CurrentUser() user: AuthUser,
+    @Query('type') type?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('accountId') accountId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('query') query?: string,
+  ): Promise<string> {
+    const filters: TransactionFilters = { type, categoryId, accountId, from, to, query }
+    return this.transactionsService.exportCsv(user.id, filters)
   }
 
   @Get(':id')

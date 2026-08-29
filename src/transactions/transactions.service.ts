@@ -129,6 +129,32 @@ export class TransactionsService {
     return where
   }
 
+  async exportCsv(userId: string, filters: TransactionFilters): Promise<string> {
+    const where = this.buildWhere(userId, filters)
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      orderBy: [{ transactionDate: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        category: true,
+        account: true,
+      },
+    })
+
+    const header = ['Tanggal', 'Tipe', 'Kategori', 'Akun', 'Nominal', 'Catatan'].join(',')
+    const rows = transactions.map((t) => {
+      const date = toDateOnly(t.transactionDate)
+      const type = t.type === 'income' ? 'Pemasukan' : 'Pengeluaran'
+      const category = t.category.name
+      const account = t.account.name
+      const amount = toNumber(t.amount)
+      // Escape quotes in note
+      const note = t.note ? `"${t.note.replace(/"/g, '""')}"` : '""'
+      return `${date},${type},"${category}","${account}",${amount},${note}`
+    })
+
+    return [header, ...rows].join('\n')
+  }
+
   private async requireUsableCategory(userId: string, categoryId: string): Promise<Category> {
     const category = await this.prisma.category.findFirst({
       where: { id: categoryId, OR: [{ userId }, { userId: null }] },
