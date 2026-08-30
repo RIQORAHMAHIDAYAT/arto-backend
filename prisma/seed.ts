@@ -23,6 +23,7 @@ const SYSTEM_CATEGORIES: Array<{ name: string; type: TransactionType; icon: stri
   { name: 'Hiburan', type: 'expense', icon: '🎬' },
   { name: 'Gaji', type: 'income', icon: '💰' },
   { name: 'Lainnya', type: 'expense', icon: '📦' },
+  { name: 'Semua Kategori', type: 'expense', icon: '🌍' },
 ]
 
 function dateOnly(daysFromToday: number): string {

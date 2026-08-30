@@ -279,11 +279,17 @@ export class BudgetsService {
     }
   }
 
+  private async isGlobalCategory(categoryId: string): Promise<boolean> {
+    const cat = await this.prisma.category.findUnique({ where: { id: categoryId } });
+    return cat?.name === 'Semua Kategori' && cat?.userId === null;
+  }
+
   private async spentForBudget(userId: string, categoryId: string, periodStart: Date, periodEnd: Date): Promise<number> {
+    const isGlobal = await this.isGlobalCategory(categoryId);
     const result = await this.prisma.transaction.aggregate({
       where: {
         userId,
-        categoryId,
+        ...(isGlobal ? {} : { categoryId }),
         type: 'expense',
         transactionDate: { gte: periodStart, lte: periodEnd },
       },
@@ -293,10 +299,11 @@ export class BudgetsService {
   }
 
   private async spentOnDate(userId: string, categoryId: string, date: string): Promise<number> {
+    const isGlobal = await this.isGlobalCategory(categoryId);
     const result = await this.prisma.transaction.aggregate({
       where: {
         userId,
-        categoryId,
+        ...(isGlobal ? {} : { categoryId }),
         type: 'expense',
         transactionDate: { gte: parseDateOnly(date), lte: parsePeriodEnd(date) },
       },
@@ -309,15 +316,13 @@ export class BudgetsService {
     const map = new Map<string, number>()
     if (budgets.length === 0) return map
 
-    // Hitung terpakai per-budget secara terpisah. Grouping by categoryId saja
-    // tidak aman karena satu kategori bisa punya beberapa periode budget
-    // (mis. budget bulan Jan dan Feb) sehingga terjadi double-count.
     const results = await Promise.all(
       budgets.map(async (b) => {
+        const isGlobal = await this.isGlobalCategory(b.categoryId);
         const aggregated = await this.prisma.transaction.aggregate({
           where: {
             userId,
-            categoryId: b.categoryId,
+            ...(isGlobal ? {} : { categoryId: b.categoryId }),
             type: 'expense',
             transactionDate: { gte: b.periodStart, lte: b.periodEnd },
           },
