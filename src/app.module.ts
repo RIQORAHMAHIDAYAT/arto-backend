@@ -19,6 +19,9 @@ import { GoalsModule } from './goals/goals.module'
 import { TransactionsModule } from './transactions/transactions.module'
 import { UsersModule } from './users/users.module'
 import { parseDurationToSeconds } from './common/utils/time'
+import { ScheduleModule } from '@nestjs/schedule'
+import { RecurringTransactionsModule } from './recurring-transactions/recurring-transactions.module'
+import { NotificationsModule } from './notifications/notifications.module'
 
 @Module({
   imports: [
@@ -56,6 +59,9 @@ import { parseDurationToSeconds } from './common/utils/time'
     FinancialHealthModule,
     GoalsModule,
     AdminModule,
+    ScheduleModule.forRoot(),
+    RecurringTransactionsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [
