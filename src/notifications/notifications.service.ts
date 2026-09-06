@@ -38,7 +38,7 @@ export class NotificationsService {
     const chunks = this.expo.chunkPushNotifications(messages);
     for (const chunk of chunks) {
       try {
-        const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
+        await this.expo.sendPushNotificationsAsync(chunk);
         this.logger.log(`Push notification terkirim ke user ${userId}`);
       } catch (error) {
         this.logger.error(`Gagal mengirim notifikasi ke user ${userId}`, error);
