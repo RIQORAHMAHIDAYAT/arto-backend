@@ -15,6 +15,7 @@ export interface SpendingChartPoint {
 
 export interface DashboardSummary {
   totalBalance: number
+  totalInitialBalance: number
   totalIncome: number
   totalExpense: number
   periodLabel: string
@@ -60,6 +61,7 @@ export class DashboardService {
 
     return {
       totalBalance: accounts.reduce((sum, a) => sum + a.balance, 0),
+      totalInitialBalance: accounts.reduce((sum, a) => sum + a.initialBalance, 0),
       totalIncome: monthTotals.income,
       totalExpense: monthTotals.expense,
       periodLabel: this.periodLabel(today),
