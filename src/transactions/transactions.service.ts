@@ -155,6 +155,74 @@ export class TransactionsService {
     return [header, ...rows].join('\n')
   }
 
+  async exportPdf(userId: string, filters: TransactionFilters): Promise<Buffer> {
+    const PDFDocument = require('pdfkit');
+    const where = this.buildWhere(userId, filters);
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      orderBy: [{ transactionDate: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        category: true,
+        account: true,
+      },
+    });
+
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 30, size: 'A4' });
+      const buffers: Buffer[] = [];
+      doc.on('data', (b: Buffer) => buffers.push(b));
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+      doc.on('error', reject);
+
+      doc.fontSize(16).text('Laporan Transaksi', { align: 'center' });
+      doc.moveDown(2);
+
+      const colWidths = [70, 70, 100, 100, 80, 110];
+      const startX = 30;
+      let startY = doc.y;
+
+      // Draw Headers
+      doc.fontSize(10).font('Helvetica-Bold');
+      const headers = ['Tanggal', 'Tipe', 'Kategori', 'Akun', 'Nominal', 'Catatan'];
+      let currentX = startX;
+      headers.forEach((header, i) => {
+        doc.text(header, currentX, startY, { width: colWidths[i], align: 'left' });
+        currentX += colWidths[i];
+      });
+
+      doc.moveTo(startX, startY + 15).lineTo(startX + 530, startY + 15).stroke();
+      doc.moveDown(1);
+      doc.font('Helvetica');
+
+      transactions.forEach((t) => {
+        if (doc.y > 750) {
+          doc.addPage();
+          doc.moveTo(startX, 30).lineTo(startX + 530, 30).stroke();
+          doc.moveDown(1);
+        }
+        
+        startY = doc.y;
+        currentX = startX;
+        
+        const date = toDateOnly(t.transactionDate);
+        const type = t.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+        const category = t.category.name;
+        const account = t.account.name;
+        const amount = 'Rp ' + toNumber(t.amount).toLocaleString('id-ID');
+        const note = t.note || '-';
+        
+        const row = [date, type, category, account, amount, note];
+        row.forEach((text, i) => {
+          doc.text(text, currentX, startY, { width: colWidths[i], align: 'left' });
+          currentX += colWidths[i];
+        });
+        doc.moveDown(0.5);
+      });
+
+      doc.end();
+    });
+  }
+
   private async requireUsableCategory(userId: string, categoryId: string): Promise<Category> {
     const category = await this.prisma.category.findFirst({
       where: { id: categoryId, OR: [{ userId }, { userId: null }] },

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Query } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Query, StreamableFile } from '@nestjs/common'
 import { AuthUser, CurrentUser } from '../common/decorators/current-user.decorator'
 import { Paginated, TransactionFilters, TransactionsService, transactionToResponse } from './transactions.service'
 import { CreateTransactionDto } from './dto/create-transaction.dto'
@@ -55,6 +55,24 @@ export class TransactionsController {
   ): Promise<string> {
     const filters: TransactionFilters = { type, categoryId, accountId, from, to, query }
     return this.transactionsService.exportCsv(user.id, filters)
+  }
+
+  @Get('export/pdf')
+  @HttpCode(200)
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'attachment; filename="transactions.pdf"')
+  async exportPdf(
+    @CurrentUser() user: AuthUser,
+    @Query('type') type?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('accountId') accountId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('query') query?: string,
+  ): Promise<StreamableFile> {
+    const filters: TransactionFilters = { type, categoryId, accountId, from, to, query }
+    const buffer = await this.transactionsService.exportPdf(user.id, filters)
+    return new StreamableFile(buffer)
   }
 
   @Get(':id')
